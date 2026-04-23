@@ -1,10 +1,10 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { checkRateLimit } from '@/lib/backend/rateLimit';
 import { withApiHandler } from '@/lib/backend/withApiHandler';
 import { ok } from '@/lib/backend/apiResponse';
 import { TooManyRequestsError, ValidationError, UnauthorizedError } from '@/lib/backend/errors';
-import { verifySignatureWithNonce, createSessionToken } from '@/lib/backend/auth';
+import { verifySignatureWithNonce, createSessionToken, AUTH_COOKIE_NAME, COOKIE_OPTIONS } from '@/lib/backend/auth';
 
 // Request validation schema
 const VerifyRequestSchema = z.object({
@@ -48,16 +48,19 @@ export const POST = withApiHandler(async (req: NextRequest) => {
         throw new UnauthorizedError(verificationResult.error || 'Signature verification failed');
     }
 
-    // TODO: Create a proper session token (JWT or similar)
+    // Create a proper session token
     const sessionToken = createSessionToken(address);
 
-    // Return success response with session token
-    return ok({
+    // Prepare success response
+    const response = ok({
         verified: true,
         address: verificationResult.address,
         message: 'Signature verified successfully',
-        // TODO: Replace with proper JWT/session management
         sessionToken,
-        sessionType: 'placeholder', // Indicates this is a placeholder implementation
     });
+
+    // Set session cookie
+    response.cookies.set(AUTH_COOKIE_NAME, sessionToken, COOKIE_OPTIONS);
+
+    return response;
 });

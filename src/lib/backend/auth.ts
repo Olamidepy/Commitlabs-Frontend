@@ -10,6 +10,13 @@ export interface NonceRecord {
     expiresAt: Date;
 }
 
+export interface SessionRecord {
+    token: string;
+    address: string;
+    createdAt: Date;
+    expiresAt: Date;
+}
+
 export interface SignatureVerificationRequest {
     address: string;
     signature: string;
@@ -25,19 +32,37 @@ export interface SignatureVerificationResult {
 // ─── In‑memory storage (TODO: replace with Redis/database) ─────────────────────
 
 const nonceStore = new Map<string, NonceRecord>();
+const sessionStore = new Map<string, SessionRecord>();
+
+export const AUTH_COOKIE_NAME = 'commitlabs_session';
+
+export const COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    path: '/',
+};
 
 // Clean up expired nonces every 5 minutes
 const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
-const NONCE_TTL = 5 * 60 * 1000; // 5 minutes
-
 setInterval(() => {
     const now = new Date();
+    // Cleanup nonces
     for (const [key, record] of nonceStore.entries()) {
         if (record.expiresAt < now) {
             nonceStore.delete(key);
         }
     }
+    // Cleanup sessions
+    for (const [key, record] of sessionStore.entries()) {
+        if (record.expiresAt < now) {
+            sessionStore.delete(key);
+        }
+    }
 }, CLEANUP_INTERVAL);
+
+const NONCE_TTL = 5 * 60 * 1000; // 5 minutes
+const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 // ─── Nonce Management ───────────────────────────────────────────────────────
 
@@ -198,23 +223,57 @@ export function generateChallengeMessage(nonce: string): string {
     return `Sign in to CommitLabs: ${nonce}`;
 }
 
-// ─── Session Management (TODO) ─────────────────────────────────────────────────
+// ─── Session Management ───────────────────────────────────────────────────────
 
 /**
- * TODO: Create a session token after successful verification.
- * This should return a JWT or similar session identifier.
+ * Create a session token after successful verification and store it.
  */
 export function createSessionToken(address: string): string {
-    // TODO: Implement JWT creation or session management
-    // For now, return a placeholder
-    return `session_${address}_${Date.now()}`;
+    const token = `session_${randomBytes(16).toString('hex')}`;
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + SESSION_TTL);
+
+    const record: SessionRecord = {
+        token,
+        address,
+        createdAt: now,
+        expiresAt,
+    };
+
+    sessionStore.set(token, record);
+    return token;
 }
 
 /**
- * TODO: Verify a session token.
+ * Verify a session token.
  */
 export function verifySessionToken(token: string): { valid: boolean; address?: string } {
-    // TODO: Implement JWT verification or session validation
-    // For now, return placeholder
-    return { valid: false };
+    const record = sessionStore.get(token);
+    
+    if (!record) {
+        return { valid: false };
+    }
+
+    if (record.expiresAt < new Date()) {
+        sessionStore.delete(token);
+        return { valid: false };
+    }
+
+    return { valid: true, address: record.address };
+}
+
+/**
+ * Invalidate a session token.
+ */
+export function revokeSession(token: string): boolean {
+    return sessionStore.delete(token);
+}
+
+/**
+ * Export for testing purposes (in-memory store)
+ * @internal
+ */
+export function _clearStores(): void {
+    nonceStore.clear();
+    sessionStore.clear();
 }
