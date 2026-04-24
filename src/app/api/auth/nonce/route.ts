@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { checkRateLimit } from '@/lib/backend/rateLimit';
 import { withApiHandler } from '@/lib/backend/withApiHandler';
-import { ok, fail } from '@/lib/backend/apiResponse';
+import { ok } from '@/lib/backend/apiResponse';
 import { TooManyRequestsError, ValidationError } from '@/lib/backend/errors';
 import { generateNonce, storeNonce, generateChallengeMessage } from '@/lib/backend/auth';
 
@@ -40,7 +40,7 @@ export const POST = withApiHandler(async (req: NextRequest) => {
 
     // Generate and store nonce
     const nonce = generateNonce();
-    const nonceRecord = storeNonce(address, nonce);
+    const nonceRecord = await storeNonce(address, nonce);
     const challengeMessage = generateChallengeMessage(nonce);
 
     // Return the nonce and challenge message

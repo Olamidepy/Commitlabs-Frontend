@@ -38,7 +38,7 @@ export const POST = withApiHandler(async (req: NextRequest) => {
     const { address, signature, message } = validation.data;
 
     // Verify the signature and nonce
-    const verificationResult = verifySignatureWithNonce({
+    const verificationResult = await verifySignatureWithNonce({
         address,
         signature,
         message,
@@ -49,7 +49,7 @@ export const POST = withApiHandler(async (req: NextRequest) => {
     }
 
     // TODO: Create a proper session token (JWT or similar)
-    const sessionToken = createSessionToken(address);
+    const sessionToken = await createSessionToken(address);
 
     // Return success response with session token
     return ok({
