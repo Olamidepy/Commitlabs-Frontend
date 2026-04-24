@@ -1,7 +1,73 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { marketplaceService } from './marketplace';
+import { 
+  marketplaceService, 
+  listMarketplaceListings, 
+  isMarketplaceSortBy, 
+  getMarketplaceSortKeys 
+} from './marketplace';
 import { ValidationError, ConflictError, NotFoundError } from '../errors';
-import type { CreateListingRequest } from '@/types/marketplace';
+import type { CreateListingRequest } from '@/lib/types/domain';
+
+describe('Marketplace Functions', () => {
+  describe('isMarketplaceSortBy', () => {
+    it('should return true for valid sort keys', () => {
+      expect(isMarketplaceSortBy('price')).toBe(true);
+      expect(isMarketplaceSortBy('amount')).toBe(true);
+    });
+
+    it('should return false for invalid sort keys', () => {
+      expect(isMarketplaceSortBy('invalid')).toBe(false);
+    });
+  });
+
+  describe('getMarketplaceSortKeys', () => {
+    it('should return all valid sort keys', () => {
+      const keys = getMarketplaceSortKeys();
+      expect(keys).toContain('price');
+      expect(keys).toContain('amount');
+      expect(keys).toContain('complianceScore');
+    });
+  });
+
+  describe('listMarketplaceListings', () => {
+    it('should return all listings by default', async () => {
+      const listings = await listMarketplaceListings({});
+      expect(listings.length).toBeGreaterThan(0);
+    });
+
+    it('should filter by type', async () => {
+      const listings = await listMarketplaceListings({ type: 'Safe' });
+      listings.forEach(l => expect(l.type).toBe('Safe'));
+    });
+
+    it('should filter by minCompliance', async () => {
+      const listings = await listMarketplaceListings({ minCompliance: 90 });
+      listings.forEach(l => expect(l.complianceScore).toBeGreaterThanOrEqual(90));
+    });
+
+    it('should filter by maxLoss', async () => {
+      const listings = await listMarketplaceListings({ maxLoss: 5 });
+      listings.forEach(l => expect(l.maxLoss).toBeLessThanOrEqual(5));
+    });
+
+    it('should filter by minAmount', async () => {
+      const listings = await listMarketplaceListings({ minAmount: 100000 });
+      listings.forEach(l => expect(l.amount).toBeGreaterThanOrEqual(100000));
+    });
+
+    it('should filter by maxAmount', async () => {
+      const listings = await listMarketplaceListings({ maxAmount: 100000 });
+      listings.forEach(l => expect(l.amount).toBeLessThanOrEqual(100000));
+    });
+
+    it('should sort by remainingDays ascending', async () => {
+      const listings = await listMarketplaceListings({ sortBy: 'remainingDays' });
+      for (let i = 0; i < listings.length - 1; i++) {
+        expect(listings[i].remainingDays).toBeLessThanOrEqual(listings[i+1].remainingDays);
+      }
+    });
+  });
+});
 
 describe('MarketplaceService', () => {
   // Reset service state before each test
@@ -218,6 +284,98 @@ describe('MarketplaceService', () => {
     it('should return null when listing does not exist', async () => {
       const listing = await marketplaceService.getListing('nonexistent_id');
       expect(listing).toBeNull();
+    });
+  });
+
+  describe('getPurchasePreflight', () => {
+    const sellerAddress = 'GSELLERXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+    const buyerAddress = 'GBUYERXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+
+    it('should return eligible when listing is active and buyer is not seller', async () => {
+      const request: CreateListingRequest = {
+        commitmentId: 'commitment_preflight_ok',
+        price: '100.00',
+        currencyAsset: 'USDC',
+        sellerAddress,
+      };
+
+      const listing = await marketplaceService.createListing(request);
+      const preflight = await marketplaceService.getPurchasePreflight(listing.id, buyerAddress);
+
+      expect(preflight.eligible).toBe(true);
+      expect(preflight.reasons).toHaveLength(0);
+    });
+
+    it('should throw NotFoundError when listing does not exist', async () => {
+      await expect(
+        marketplaceService.getPurchasePreflight('nonexistent_id', buyerAddress)
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('should return ineligible when buyer is the seller', async () => {
+      const request: CreateListingRequest = {
+        commitmentId: 'commitment_preflight_seller',
+        price: '100.00',
+        currencyAsset: 'USDC',
+        sellerAddress,
+      };
+
+      const listing = await marketplaceService.createListing(request);
+      const preflight = await marketplaceService.getPurchasePreflight(listing.id, sellerAddress);
+
+      expect(preflight.eligible).toBe(false);
+      expect(preflight.reasons).toContain('buyer_is_seller');
+    });
+
+    it('should return ineligible when listing is not active', async () => {
+      const request: CreateListingRequest = {
+        commitmentId: 'commitment_preflight_inactive',
+        price: '100.00',
+        currencyAsset: 'USDC',
+        sellerAddress,
+      };
+
+      const listing = await marketplaceService.createListing(request);
+      await marketplaceService.cancelListing(listing.id, sellerAddress);
+
+      const preflight = await marketplaceService.getPurchasePreflight(listing.id, buyerAddress);
+
+      expect(preflight.eligible).toBe(false);
+      expect(preflight.reasons).toContain('listing_inactive');
+    });
+
+    it('should return ineligible when commitment is non-transferable', async () => {
+      const request: CreateListingRequest = {
+        commitmentId: 'commitment_non-transferable_123',
+        price: '100.00',
+        currencyAsset: 'USDC',
+        sellerAddress,
+      };
+
+      const listing = await marketplaceService.createListing(request);
+      const preflight = await marketplaceService.getPurchasePreflight(listing.id, buyerAddress);
+
+      expect(preflight.eligible).toBe(false);
+      expect(preflight.reasons).toContain('non_transferable');
+    });
+
+    it('should return multiple reasons if applicable', async () => {
+      const request: CreateListingRequest = {
+        commitmentId: 'commitment_non-transferable_dual',
+        price: '100.00',
+        currencyAsset: 'USDC',
+        sellerAddress,
+      };
+
+      const listing = await marketplaceService.createListing(request);
+      await marketplaceService.cancelListing(listing.id, sellerAddress);
+
+      const preflight = await marketplaceService.getPurchasePreflight(listing.id, sellerAddress);
+
+      expect(preflight.eligible).toBe(false);
+      expect(preflight.reasons).toContain('listing_inactive');
+      expect(preflight.reasons).toContain('buyer_is_seller');
+      expect(preflight.reasons).toContain('non_transferable');
     });
   });
 });
