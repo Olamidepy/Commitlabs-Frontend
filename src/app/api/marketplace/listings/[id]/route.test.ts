@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DELETE } from './route';
+import { DELETE, GET, POST, PUT, PATCH } from './route';
 import { NextRequest } from 'next/server';
 import { marketplaceService } from '@/lib/backend/services/marketplace';
 import { NotFoundError, ValidationError, ConflictError } from '@/lib/backend/errors';
@@ -148,5 +148,28 @@ describe('DELETE /api/marketplace/listings/[id]', () => {
     expect(response.status).toBe(409);
     expect(data.success).toBe(false);
     expect(data.error.code).toBe('CONFLICT');
+  });
+});
+
+describe('405 Method Not Allowed — /api/marketplace/listings/[id]', () => {
+  const url = 'http://localhost:3000/api/marketplace/listings/listing_1';
+  const ctx = { params: { id: 'listing_1' } };
+
+  it.each([
+    ['GET', GET],
+    ['POST', POST],
+    ['PUT', PUT],
+    ['PATCH', PATCH],
+  ] as const)('%s returns 405 with Allow: DELETE header', async (method, handler) => {
+    const request = new NextRequest(url, { method });
+    const response = await handler(request, ctx);
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get('Allow')).toBe('DELETE');
+
+    const data = await response.json();
+    expect(data.success).toBe(false);
+    expect(data.error.code).toBe('METHOD_NOT_ALLOWED');
+    expect(data.error.message).toContain('DELETE');
   });
 });

@@ -11,7 +11,7 @@ import {
   TooManyRequestsError,
 } from '@/lib/backend/errors';
 import { withApiHandler } from '@/lib/backend/withApiHandler';
-import { ok } from '@/lib/backend/apiResponse';
+import { ok, methodNotAllowed } from '@/lib/backend/apiResponse';
 import { getMockData } from '@/lib/backend/mockDb';
 import type { RecordAttestationOnChainParams } from '@/lib/backend/services/contracts';
 
@@ -233,4 +233,8 @@ export const POST = withApiHandler(async (req: NextRequest) => {
       status: normalized.status,
     });
   }
+});
+
+const _405 = methodNotAllowed(['GET', 'POST']);
+export { _405 as PUT, _405 as PATCH, _405 as DELETE };
 });

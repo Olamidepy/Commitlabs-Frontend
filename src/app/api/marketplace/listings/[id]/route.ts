@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { withApiHandler } from '@/lib/backend/withApiHandler';
-import { ok } from '@/lib/backend/apiResponse';
+import { ok, methodNotAllowed } from '@/lib/backend/apiResponse';
 import { ValidationError } from '@/lib/backend/errors';
 import { marketplaceService } from '@/lib/backend/services/marketplace';
 import type { CancelListingResponse } from '@/types/marketplace';
@@ -41,3 +41,6 @@ export const DELETE = withApiHandler(
     return ok(response);
   }
 );
+
+const _405 = methodNotAllowed(['DELETE']);
+export { _405 as GET, _405 as POST, _405 as PUT, _405 as PATCH };

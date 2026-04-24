@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ok } from '@/lib/backend/apiResponse';
+import { ok, methodNotAllowed } from '@/lib/backend/apiResponse';
 import { checkRateLimit } from '@/lib/backend/rateLimit';
 import { withApiHandler } from '@/lib/backend/withApiHandler';
 import { ValidationError } from '@/lib/backend/errors';
@@ -147,3 +147,6 @@ export const POST = withApiHandler(async (req: NextRequest) => {
 
         return ok(response, 201);
 });
+
+const _405 = methodNotAllowed(['GET', 'POST']);
+export { _405 as PUT, _405 as PATCH, _405 as DELETE };

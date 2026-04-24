@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { checkRateLimit } from '@/lib/backend/rateLimit';
 import { withApiHandler } from '@/lib/backend/withApiHandler';
-import { ok } from '@/lib/backend/apiResponse';
+import { ok, methodNotAllowed } from '@/lib/backend/apiResponse';
 import { TooManyRequestsError } from '@/lib/backend/errors';
 
 export const POST = withApiHandler(async (req: NextRequest) => {
@@ -18,3 +18,6 @@ export const POST = withApiHandler(async (req: NextRequest) => {
 
     return ok({ message: 'Authentication successful.' });
 });
+
+const _405 = methodNotAllowed(['POST']);
+export { _405 as GET, _405 as PUT, _405 as PATCH, _405 as DELETE };

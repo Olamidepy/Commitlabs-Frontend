@@ -6,7 +6,7 @@ export {
   EnvValidationError,
 } from "./env";
 export type { ValidatedEnv } from "./env";
-export { ok, fail } from "./apiResponse";
+export { ok, fail, methodNotAllowed } from "./apiResponse";
 export type { OkResponse, FailResponse, ApiResponse } from "./apiResponse";
 export { getBackendConfig } from "./config";
 export {

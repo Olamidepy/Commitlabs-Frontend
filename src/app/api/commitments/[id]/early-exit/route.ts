@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/backend/rateLimit';
 import { logEarlyExit } from '@/lib/backend/logger';
+import { methodNotAllowed } from '@/lib/backend/apiResponse';
 
 interface Params {
     params: { id: string };
@@ -28,3 +29,6 @@ export async function POST(req: NextRequest, { params }: Params) {
         commitmentId: id
     });
 }
+
+const _405 = methodNotAllowed(['POST']);
+export { _405 as GET, _405 as PUT, _405 as PATCH, _405 as DELETE };
