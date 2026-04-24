@@ -1,4 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+
+type NextRouteHandler = (
+  req: NextRequest,
+  context: { params: Record<string, string> },
+) => Promise<NextResponse>;
 
 // ─── Success shape ────────────────────────────────────────────────────────────
 
@@ -85,4 +90,19 @@ export function fail(
     },
   };
   return NextResponse.json(body, { status });
+}
+
+export function methodNotAllowed(allowed: string[]): NextRouteHandler {
+  const allowHeader = allowed.join(", ");
+  return (): NextResponse<FailResponse> =>
+    NextResponse.json<FailResponse>(
+      {
+        success: false,
+        error: {
+          code: "METHOD_NOT_ALLOWED",
+          message: `Method Not Allowed. Supported methods: ${allowHeader}`,
+        },
+      },
+      { status: 405, headers: { Allow: allowHeader } },
+    );
 }
