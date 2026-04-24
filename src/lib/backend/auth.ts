@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import jwt from 'jsonwebtoken';
 import Stellar from '@stellar/stellar-sdk';
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -19,6 +20,20 @@ export interface SignatureVerificationRequest {
 export interface SignatureVerificationResult {
     valid: boolean;
     address?: string;
+    error?: string;
+}
+
+export interface SessionPayload {
+    address: string;
+    iat: number;
+    exp: number;
+    csrfToken: string;
+}
+
+export interface SessionVerificationResult {
+    valid: boolean;
+    address?: string;
+    csrfToken?: string;
     error?: string;
 }
 
@@ -198,23 +213,101 @@ export function generateChallengeMessage(nonce: string): string {
     return `Sign in to CommitLabs: ${nonce}`;
 }
 
-// ─── Session Management (TODO) ─────────────────────────────────────────────────
+// ─── Session Management ─────────────────────────────────────────────────────
+
+// Session configuration
+const JWT_SECRET = process.env.JWT_SECRET || randomBytes(64).toString('hex');
+const SESSION_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+const CSRF_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours for CSRF tokens
+
+// In-memory session store (TODO: replace with Redis/database)
+const sessionStore = new Map<string, { revoked: boolean; revokedAt?: Date }>();
 
 /**
- * TODO: Create a session token after successful verification.
- * This should return a JWT or similar session identifier.
+ * Create a JWT session token for an authenticated address.
  */
-export function createSessionToken(address: string): string {
-    // TODO: Implement JWT creation or session management
-    // For now, return a placeholder
-    return `session_${address}_${Date.now()}`;
+export function createSessionToken(address: string): { token: string; csrfToken: string } {
+    const now = Math.floor(Date.now() / 1000);
+    const csrfToken = randomBytes(32).toString('hex');
+    
+    const payload: SessionPayload = {
+        address,
+        iat: now,
+        exp: now + Math.floor(SESSION_EXPIRY / 1000),
+        csrfToken,
+    };
+    
+    const token = jwt.sign(payload, JWT_SECRET, {
+        algorithm: 'HS256',
+    });
+    
+    return { token, csrfToken };
 }
 
 /**
- * TODO: Verify a session token.
+ * Verify a JWT session token and return the payload.
  */
-export function verifySessionToken(token: string): { valid: boolean; address?: string } {
-    // TODO: Implement JWT verification or session validation
-    // For now, return placeholder
-    return { valid: false };
+export function verifySessionToken(token: string): SessionVerificationResult {
+    try {
+        if (!token) {
+            return { valid: false, error: 'No token provided' };
+        }
+        
+        // Check if token is in revoked list
+        const revokedRecord = sessionStore.get(token);
+        if (revokedRecord?.revoked) {
+            return { valid: false, error: 'Token has been revoked' };
+        }
+        
+        const decoded = jwt.verify(token, JWT_SECRET, {
+            algorithms: ['HS256'],
+        }) as SessionPayload;
+        
+        return {
+            valid: true,
+            address: decoded.address,
+            csrfToken: decoded.csrfToken,
+        };
+    } catch (error) {
+        if (error instanceof jwt.TokenExpiredError) {
+            return { valid: false, error: 'Token has expired' };
+        }
+        if (error instanceof jwt.JsonWebTokenError) {
+            return { valid: false, error: 'Invalid token' };
+        }
+        return { valid: false, error: 'Token verification failed' };
+    }
 }
+
+/**
+ * Revoke a session token (for logout).
+ */
+export function revokeSessionToken(token: string): boolean {
+    try {
+        const verification = verifySessionToken(token);
+        if (verification.valid) {
+            sessionStore.set(token, {
+                revoked: true,
+                revokedAt: new Date(),
+            });
+            return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Clean up expired and revoked tokens periodically.
+ */
+setInterval(() => {
+    const now = Date.now();
+    for (const [token, record] of sessionStore.entries()) {
+        // Remove revoked tokens after 7 days
+        if (record.revoked && record.revokedAt && 
+            now - record.revokedAt.getTime() > 7 * 24 * 60 * 60 * 1000) {
+            sessionStore.delete(token);
+        }
+    }
+}, 60 * 60 * 1000); // Clean up every hour

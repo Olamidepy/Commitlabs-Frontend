@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { checkRateLimit } from '@/lib/backend/rateLimit';
 import { withApiHandler } from '@/lib/backend/withApiHandler';
@@ -48,16 +48,34 @@ export const POST = withApiHandler(async (req: NextRequest) => {
         throw new UnauthorizedError(verificationResult.error || 'Signature verification failed');
     }
 
-    // TODO: Create a proper session token (JWT or similar)
-    const sessionToken = createSessionToken(address);
+    // Create JWT session token with CSRF token
+    const { token: sessionToken, csrfToken } = createSessionToken(address);
 
-    // Return success response with session token
-    return ok({
+    // Create response with session cookie
+    const response = NextResponse.json({
         verified: true,
         address: verificationResult.address,
         message: 'Signature verified successfully',
-        // TODO: Replace with proper JWT/session management
-        sessionToken,
-        sessionType: 'placeholder', // Indicates this is a placeholder implementation
+        csrfToken, // Send CSRF token for client to use in subsequent requests
     });
+
+    // Set secure HTTP-only session cookie
+    response.cookies.set('session', sessionToken, {
+        httpOnly: true, // Prevent JavaScript access
+        secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+        sameSite: 'strict', // Prevent CSRF
+        maxAge: 24 * 60 * 60, // 24 hours in seconds
+        path: '/', // Available site-wide
+    });
+
+    // Set non-HttpOnly CSRF cookie for client-side access (double-submit pattern)
+    response.cookies.set('csrf', csrfToken, {
+        httpOnly: false, // Allow JavaScript access for CSRF token
+        secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+        sameSite: 'strict', // Prevent CSRF
+        maxAge: 24 * 60 * 60, // 24 hours in seconds
+        path: '/', // Available site-wide
+    });
+
+    return response;
 });
