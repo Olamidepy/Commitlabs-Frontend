@@ -10,7 +10,9 @@
     "test": "vitest",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
-    "seed:mock": "tsx scripts/seed-backend-mock.ts"
+    "seed:mock": "tsx scripts/seed-backend-mock.ts",
+    "vercel-build": "vercel build",
+    "vercel-deploy": "vercel --prod"
   },
   "dependencies": {
     "@stellar/freighter-api": "^1.6.0",
