@@ -30,10 +30,10 @@ interface CreateCommitmentRequestBody {
 
 export const GET = withApiHandler(async (req: NextRequest, context: { params: Record<string, string> }, correlationId: string) => {
   const { searchParams } = new URL(req.url);
-  
+
   // Validate query parameters using Zod
   const queryResult = CommitmentsQuerySchema.safeParse(Object.fromEntries(searchParams.entries()));
-  
+
   if (!queryResult.success) {
     throw new ValidationError("Invalid query parameters", queryResult.error.errors);
   }

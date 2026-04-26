@@ -59,13 +59,15 @@ export function withApiHandler(handler: RouteHandler): RouteHandler {
                     method: req.method,
                 });
 
-                return fail(
+                const response = fail(
                     err.code,
                     err.message,
                     err.details,
                     err.statusCode,
                     err.retryAfterSeconds,
                 );
+                response.headers.set('x-request-id', requestId);
+                return response;
             }
 
             const error = err instanceof Error ? err : new Error(String(err));
@@ -76,13 +78,16 @@ export function withApiHandler(handler: RouteHandler): RouteHandler {
                 method: req.method,
             });
 
-            return fail(
+            const response = fail(
                 'INTERNAL_ERROR',
                 'An unexpected error occurred. Please try again later.',
                 undefined,
                 500,
                 correlationId
             );
+
+            response.headers.set('x-request-id', requestId);
+            return response;
         }
     };
 }

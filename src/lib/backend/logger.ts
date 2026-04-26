@@ -60,6 +60,10 @@ export function getRequestId(req?: Request | NextRequest): string {
     return rid;
 }
 
+export function getOrCreateRequestId(req?: Request | NextRequest): string {
+    return getRequestId(req);
+}
+
 function formatEntry(entry: LogEntry): string {
     return JSON.stringify(entry);
 }
