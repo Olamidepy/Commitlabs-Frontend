@@ -20,7 +20,7 @@ export const POST = withApiHandler(async (req: NextRequest) => {
     // Rate limiting
     const isAllowed = await checkRateLimit(ip, 'api/auth/verify');
     if (!isAllowed) {
-        throw new TooManyRequestsError();
+        throw new TooManyRequestsError('Rate limit exceeded. Please try again later.');
     }
 
     // Parse and validate request body (with payload size enforcement)
@@ -41,8 +41,8 @@ export const POST = withApiHandler(async (req: NextRequest) => {
 
     const { address, signature, message } = validation.data;
 
-    // Verify the signature and nonce
-    const verificationResult = verifySignatureWithNonce({
+    // Verify the signature and nonce (async)
+    const verificationResult = await verifySignatureWithNonce({
         address,
         signature,
         message,
