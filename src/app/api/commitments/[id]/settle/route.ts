@@ -2,12 +2,12 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { checkRateLimit } from '@/lib/backend/rateLimit';
 import { withApiHandler } from '@/lib/backend/withApiHandler';
-import { ok } from '@/lib/backend/apiResponse';
+import { ok, methodNotAllowed } from '@/lib/backend/apiResponse';
 import { TooManyRequestsError, ValidationError, NotFoundError, ConflictError } from '@/lib/backend/errors';
+import { getClientIp } from '@/lib/backend/getClientIp';
 import { settleCommitmentOnChain } from '@/lib/backend/services/contracts';
 import { logCommitmentSettled } from '@/lib/backend/logger';
 
-// Request validation schema
 const SettleRequestSchema = z.object({
     callerAddress: z.string().optional(),
 });
@@ -16,26 +16,23 @@ interface Params {
     params: { id: string };
 }
 
-export const POST = withApiHandler(async (req: NextRequest, context: { params: Record<string, string> }, correlationId: string) => {
-    const { id } = context.params;
-    const ip = req.ip ?? req.headers.get('x-forwarded-for') ?? 'anonymous';
+export const POST = withApiHandler(async (req: NextRequest, { params }: Params) => {
+    const { id } = params;
+    const ip = getClientIp(req);
 
-    // Rate limiting
-    const isAllowed = await checkRateLimit(ip, 'api/commitments/settle');
-    if (!isAllowed) {
-        throw new TooManyRequestsError();
+    const { allowed, retryAfterSeconds } = await checkRateLimit(ip, 'api/commitments/settle');
+    if (!allowed) {
+        throw new TooManyRequestsError(undefined, undefined, retryAfterSeconds);
     }
 
-    // Validate commitment ID
     if (!id || id.trim().length === 0) {
         throw new ValidationError('Commitment ID is required');
     }
 
-    // Parse and validate request body
     let body;
     try {
         body = await req.json();
-    } catch (error) {
+    } catch {
         throw new ValidationError('Invalid JSON in request body');
     }
 
@@ -47,13 +44,11 @@ export const POST = withApiHandler(async (req: NextRequest, context: { params: R
     const { callerAddress } = validation.data;
 
     try {
-        // Call the settlement function
         const settlementResult = await settleCommitmentOnChain({
             commitmentId: id,
             callerAddress,
         });
 
-        // Log successful settlement
         logCommitmentSettled({
             ip,
             commitmentId: id,
@@ -63,7 +58,6 @@ export const POST = withApiHandler(async (req: NextRequest, context: { params: R
             txHash: settlementResult.txHash,
         });
 
-        // Return success response
         return ok({
             commitmentId: id,
             settlementAmount: settlementResult.settlementAmount,
@@ -71,10 +65,8 @@ export const POST = withApiHandler(async (req: NextRequest, context: { params: R
             txHash: settlementResult.txHash,
             reference: settlementResult.reference,
             settledAt: new Date().toISOString(),
-        }, undefined, 200, correlationId);
-
+        });
     } catch (error) {
-        // Log failed settlement attempt
         logCommitmentSettled({
             ip,
             commitmentId: id,
@@ -82,7 +74,6 @@ export const POST = withApiHandler(async (req: NextRequest, context: { params: R
             error: error instanceof Error ? error.message : 'Unknown settlement error',
         });
 
-        // Re-throw known errors to be handled by withApiHandler
         if (
             error instanceof ValidationError ||
             error instanceof NotFoundError ||
@@ -91,7 +82,6 @@ export const POST = withApiHandler(async (req: NextRequest, context: { params: R
             throw error;
         }
 
-        // Unknown errors will be caught by withApiHandler
         throw error;
     }
 });
