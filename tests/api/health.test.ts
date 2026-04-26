@@ -3,7 +3,7 @@ import { GET } from '@/app/api/health/route'
 import { createMockRequest, createMockRouteContext, parseResponse } from './helpers'
 
 describe('GET /api/health', () => {
-  it('should return a 200 status with health status', async () => {
+  it('should return a 200 status with ok status', async () => {
     const request = createMockRequest('http://localhost:3000/api/health')
     const response = await GET(request, createMockRouteContext())
     const result = await parseResponse(response)

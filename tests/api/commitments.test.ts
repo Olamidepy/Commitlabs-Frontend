@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GET, POST } from '@/app/api/commitments/route'
 import { createMockRequest, createMockRouteContext, parseResponse } from './helpers'
 
@@ -42,8 +42,37 @@ vi.mock('@/lib/backend/services/contracts', () => {
   }
 })
 
+vi.mock('@/lib/backend/services/contracts', () => ({
+  getUserCommitmentsFromChain: vi.fn(),
+  createCommitmentOnChain: vi.fn(),
+}))
+
+vi.mock('@/lib/backend/rateLimit', () => ({
+  checkRateLimit: vi.fn().mockResolvedValue(true),
+}))
+
+import { getUserCommitmentsFromChain, createCommitmentOnChain } from '@/lib/backend/services/contracts'
+
+const MOCK_COMMITMENT = {
+  id: 'commit_1',
+  ownerAddress: 'GOWNER',
+  asset: 'USDC',
+  amount: '1000',
+  status: 'ACTIVE' as const,
+  complianceScore: 95,
+  currentValue: '1050',
+  feeEarned: '10',
+  violationCount: 0,
+  createdAt: '2026-01-01T00:00:00Z',
+  expiresAt: '2027-01-01T00:00:00Z',
+}
+
 describe('GET /api/commitments', () => {
-  it('should return a list of commitments with default parameters', async () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('should return a list of commitments', async () => {
+    vi.mocked(getUserCommitmentsFromChain).mockResolvedValue([MOCK_COMMITMENT])
+
     const request = createMockRequest(
       'http://localhost:3000/api/commitments?ownerAddress=GOWNER'
     )
@@ -74,7 +103,9 @@ describe('GET /api/commitments', () => {
     })
   })
 
-  it('should support pagination with limit and offset', async () => {
+  it('should support pagination', async () => {
+    vi.mocked(getUserCommitmentsFromChain).mockResolvedValue([MOCK_COMMITMENT])
+
     const request = createMockRequest(
       'http://localhost:3000/api/commitments?ownerAddress=GOWNER&page=1&pageSize=5'
     )
@@ -88,6 +119,8 @@ describe('GET /api/commitments', () => {
   })
 
   it('should return commitment objects with required fields', async () => {
+    vi.mocked(getUserCommitmentsFromChain).mockResolvedValue([MOCK_COMMITMENT])
+
     const request = createMockRequest(
       'http://localhost:3000/api/commitments?ownerAddress=GOWNER'
     )
@@ -131,6 +164,8 @@ describe('GET /api/commitments', () => {
 })
 
 describe('POST /api/commitments', () => {
+  beforeEach(() => vi.clearAllMocks())
+
   it('should create a new commitment with valid data', async () => {
     const commitmentData = {
       ownerAddress: 'GOWNER',
@@ -140,13 +175,16 @@ describe('POST /api/commitments', () => {
       maxLossBps: 0,
     }
 
-    const request = createMockRequest(
-      'http://localhost:3000/api/commitments',
-      {
-        method: 'POST',
-        body: commitmentData,
-      }
-    )
+    const request = createMockRequest('http://localhost:3000/api/commitments', {
+      method: 'POST',
+      body: {
+        ownerAddress: 'GOWNER',
+        asset: 'USDC',
+        amount: '1000',
+        durationDays: 30,
+        maxLossBps: 500,
+      },
+    })
 
     const response = await POST(request, createMockRouteContext())
     const result = await parseResponse(response)
@@ -156,14 +194,11 @@ describe('POST /api/commitments', () => {
     expect(result.data.data).toHaveProperty('commitmentId')
   })
 
-  it('should return 400 if required fields are missing', async () => {
-    const request = createMockRequest(
-      'http://localhost:3000/api/commitments',
-      {
-        method: 'POST',
-        body: { title: 'Incomplete Commitment' },
-      }
-    )
+  it('should return 400 if ownerAddress is missing', async () => {
+    const request = createMockRequest('http://localhost:3000/api/commitments', {
+      method: 'POST',
+      body: { asset: 'USDC', amount: '1000', durationDays: 30, maxLossBps: 500 },
+    })
 
     const response = await POST(request, createMockRouteContext())
     const result = await parseResponse(response)
@@ -171,14 +206,11 @@ describe('POST /api/commitments', () => {
     expect(result.status).toBe(400)
   })
 
-  it('should return 400 if title is missing', async () => {
-    const request = createMockRequest(
-      'http://localhost:3000/api/commitments',
-      {
-        method: 'POST',
-        body: { amount: 5000 },
-      }
-    )
+  it('should return 400 if asset is missing', async () => {
+    const request = createMockRequest('http://localhost:3000/api/commitments', {
+      method: 'POST',
+      body: { ownerAddress: 'GOWNER', amount: '1000', durationDays: 30, maxLossBps: 500 },
+    })
 
     const response = await POST(request, createMockRouteContext())
     const result = await parseResponse(response)
@@ -186,14 +218,11 @@ describe('POST /api/commitments', () => {
     expect(result.status).toBe(400)
   })
 
-  it('should return 400 if amount is missing', async () => {
-    const request = createMockRequest(
-      'http://localhost:3000/api/commitments',
-      {
-        method: 'POST',
-        body: { title: 'No Amount' },
-      }
-    )
+  it('should return 400 if amount is invalid', async () => {
+    const request = createMockRequest('http://localhost:3000/api/commitments', {
+      method: 'POST',
+      body: { ownerAddress: 'GOWNER', asset: 'USDC', amount: 'bad', durationDays: 30, maxLossBps: 500 },
+    })
 
     const response = await POST(request, createMockRouteContext())
     const result = await parseResponse(response)
@@ -218,19 +247,13 @@ describe('POST /api/commitments', () => {
       }
     )
 
-    const request2 = createMockRequest(
-      'http://localhost:3000/api/commitments',
-      {
-        method: 'POST',
-        body: commitmentData,
-      }
-    )
+    const body = { ownerAddress: 'GOWNER', asset: 'USDC', amount: '1000', durationDays: 30, maxLossBps: 500 }
 
     const response1 = await POST(request1, createMockRouteContext())
     const response2 = await POST(request2, createMockRouteContext())
 
-    const result1 = await parseResponse(response1)
-    const result2 = await parseResponse(response2)
+    const d1 = await parseResponse(r1)
+    const d2 = await parseResponse(r2)
 
     // IDs should be different
     expect(result1.data.data.commitmentId).not.toBe(result2.data.data.commitmentId)
